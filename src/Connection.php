@@ -40,6 +40,8 @@ final class Connection
 
     /**
      * Send text data. Arrays are JSON-encoded automatically.
+     *
+     * @param string|array<string, mixed> $data
      */
     public function send(string|array $data): bool
     {

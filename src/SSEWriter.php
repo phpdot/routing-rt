@@ -21,6 +21,8 @@ final class SSEWriter
 
     /**
      * Send a named event.
+     *
+     * @param string|array<string, mixed> $data
      */
     public function event(string $event, string|array $data, string|null $id = null): void
     {
@@ -47,6 +49,8 @@ final class SSEWriter
 
     /**
      * Send unnamed data.
+     *
+     * @param string|array<string, mixed> $data
      */
     public function data(string|array $data): void
     {

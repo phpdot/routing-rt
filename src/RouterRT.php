@@ -17,7 +17,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
-class RouterRT extends Router
+final class RouterRT extends Router
 {
     private RouteCollection $rtRoutes;
     private MatcherInterface|null $rtMatcher = null;
@@ -51,16 +51,17 @@ class RouterRT extends Router
     }
 
     /**
-     * Match a request against RT routes.
-     *
-     * Detects WebSocket via Upgrade header, SSE via Accept header.
-     * Returns null if no RT route matches (caller should fall back to HTTP).
+     * Match against RT routes using request headers.
+     * Upgrade: websocket → WS routes. Accept: text/event-stream → SSE routes.
+     * Returns null if no RT route matches — caller falls back to HTTP.
      */
     public function matchRt(ServerRequestInterface $request): RouteMatch|null
     {
         if ($this->rtMatcher === null) {
             $this->compileRt();
         }
+
+        assert($this->rtMatcher instanceof MatcherInterface);
 
         $segments = Path::segments($request->getUri()->getPath());
         $host = $request->getHeaderLine('host');
@@ -79,13 +80,41 @@ class RouterRT extends Router
     }
 
     /**
-     * Compile RT routes into a separate trie.
+     * Compile all routes — HTTP and RT.
      */
-    public function compileRt(): void
+    public function compile(): void
     {
-        $compiler = new RouteCompiler($this->getPatterns());
-        $root = $compiler->compile($this->rtRoutes);
-        $this->rtMatcher = new TrieMatcher($root);
+        parent::compile();
+        $this->compileRt();
+    }
+
+    /**
+     * List all routes — HTTP and RT merged.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function list(): array
+    {
+        return array_merge(parent::list(), $this->listRtRoutes());
+    }
+
+    /**
+     * Get exposed routes — HTTP and RT merged.
+     *
+     * @return array<string, string>
+     */
+    public function exposed(): array
+    {
+        $httpExposed = parent::exposed();
+        $rtExposed = [];
+        foreach ($this->rtRoutes->getExposed() as $route) {
+            $name = $route->getName();
+            if ($name !== null) {
+                $rtExposed[$name] = '/' . ltrim($route->getPattern(), '/');
+            }
+        }
+
+        return array_merge($httpExposed, $rtExposed);
     }
 
     /**
@@ -96,15 +125,58 @@ class RouterRT extends Router
         return $this->rtRoutes;
     }
 
+    /**
+     * Compile RT routes into a separate trie.
+     */
+    public function compileRt(): void
+    {
+        $compiler = new RouteCompiler($this->getPatterns());
+        $root = $compiler->compile($this->rtRoutes);
+        $this->rtMatcher = new TrieMatcher($root);
+    }
+
+    /**
+     * @param Closure|string|array<int, string> $handler
+     */
     private function addRtRoute(string $method, string $pattern, Closure|string|array $handler): Route
     {
         $fullPattern = $this->buildPattern($pattern);
         $segments = Path::segments($fullPattern);
-
         $route = new Route([$method], $fullPattern, $segments, $handler);
         $route->hosts($this->hosts);
         $this->rtRoutes->add($route);
 
         return $route;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listRtRoutes(): array
+    {
+        $list = [];
+        foreach ($this->rtRoutes->all() as $route) {
+            $handler = $route->getHandler();
+            if ($handler instanceof Closure) {
+                $handlerString = 'Closure';
+            } elseif (is_array($handler)) {
+                $handlerString = $handler[0] . '@' . $handler[1];
+            } else {
+                $handlerString = $handler;
+            }
+
+            $list[] = [
+                'methods' => $route->getMethods(),
+                'pattern' => '/' . ltrim($route->getPattern(), '/'),
+                'name' => $route->getName(),
+                'handler' => $handlerString,
+                'middlewares' => $route->getMiddlewares(),
+                'hosts' => $route->getHosts(),
+                'where' => $route->getWhere(),
+                'scope' => $route->getScope()?->getName(),
+            ];
+        }
+
+        return $list;
     }
 }

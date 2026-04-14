@@ -31,7 +31,6 @@ final class RTTest extends TestCase
     public function matchesWebSocketRoute(): void
     {
         $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt($this->wsRequest('/chat/general'));
 
@@ -43,7 +42,6 @@ final class RTTest extends TestCase
     public function returnsNullForUnmatchedWebSocket(): void
     {
         $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt($this->wsRequest('/unknown'));
 
@@ -54,7 +52,6 @@ final class RTTest extends TestCase
     public function doesNotMatchWebSocketWithoutUpgradeHeader(): void
     {
         $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt(new ServerRequest('GET', '/chat/general'));
 
@@ -64,10 +61,9 @@ final class RTTest extends TestCase
     // ── SSE matching ──
 
     #[Test]
-    public function matchesSseRoute(): void
+    public function matchesSSERoute(): void
     {
         $this->rt->sse('/dashboard/{id:int}', ['DashboardController', 'stream']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt($this->sseRequest('/dashboard/42'));
 
@@ -76,10 +72,9 @@ final class RTTest extends TestCase
     }
 
     #[Test]
-    public function returnsNullForUnmatchedSse(): void
+    public function returnsNullForUnmatchedSSE(): void
     {
         $this->rt->sse('/dashboard/{id:int}', ['DashboardController', 'stream']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt($this->sseRequest('/unknown'));
 
@@ -87,10 +82,9 @@ final class RTTest extends TestCase
     }
 
     #[Test]
-    public function doesNotMatchSseWithoutAcceptHeader(): void
+    public function doesNotMatchSSEWithoutAcceptHeader(): void
     {
         $this->rt->sse('/dashboard/{id:int}', ['DashboardController', 'stream']);
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt(new ServerRequest('GET', '/dashboard/42'));
 
@@ -100,12 +94,11 @@ final class RTTest extends TestCase
     // ── Isolation from HTTP routes ──
 
     #[Test]
-    public function samePath_httpAndWs_doNotCollide(): void
+    public function samePathHttpAndWsDoNotCollide(): void
     {
         $this->rt->get('/chat/{room}', ['HttpChatController', 'index']);
         $this->rt->ws('/chat/{room}', ['WsChatController', 'index']);
         $this->rt->compile();
-        $this->rt->compileRt();
 
         $httpMatch = $this->rt->match('GET', ['chat', 'general']);
         $wsMatch = $this->rt->matchRt($this->wsRequest('/chat/general'));
@@ -117,12 +110,11 @@ final class RTTest extends TestCase
     }
 
     #[Test]
-    public function samePath_httpAndSse_doNotCollide(): void
+    public function samePathHttpAndSSEDoNotCollide(): void
     {
         $this->rt->get('/dashboard/{id:int}', ['HttpDashController', 'show']);
-        $this->rt->sse('/dashboard/{id:int}', ['SseDashController', 'stream']);
+        $this->rt->sse('/dashboard/{id:int}', ['SSEDashController', 'stream']);
         $this->rt->compile();
-        $this->rt->compileRt();
 
         $httpMatch = $this->rt->match('GET', ['dashboard', '5']);
         $sseMatch = $this->rt->matchRt($this->sseRequest('/dashboard/5'));
@@ -130,7 +122,54 @@ final class RTTest extends TestCase
         self::assertInstanceOf(RouteMatch::class, $httpMatch);
         self::assertInstanceOf(RouteMatch::class, $sseMatch);
         self::assertSame(['HttpDashController', 'show'], $httpMatch->getRoute()->getHandler());
-        self::assertSame(['SseDashController', 'stream'], $sseMatch->getRoute()->getHandler());
+        self::assertSame(['SSEDashController', 'stream'], $sseMatch->getRoute()->getHandler());
+    }
+
+    // ── compile() compiles both ──
+
+    #[Test]
+    public function compileCompilesBothHttpAndRt(): void
+    {
+        $this->rt->get('/users', ['UserController', 'index']);
+        $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
+        $this->rt->compile();
+
+        $httpMatch = $this->rt->match('GET', ['users']);
+        $wsMatch = $this->rt->matchRt($this->wsRequest('/chat/general'));
+
+        self::assertInstanceOf(RouteMatch::class, $httpMatch);
+        self::assertInstanceOf(RouteMatch::class, $wsMatch);
+    }
+
+    // ── list() merges both ──
+
+    #[Test]
+    public function listMergesHttpAndRtRoutes(): void
+    {
+        $this->rt->get('/users', ['UserController', 'index']);
+        $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
+        $this->rt->sse('/feed', ['FeedController', 'stream']);
+
+        $list = $this->rt->list();
+
+        self::assertCount(3, $list);
+        self::assertSame(['GET'], $list[0]['methods']);
+        self::assertSame(['WS'], $list[1]['methods']);
+        self::assertSame(['SSE'], $list[2]['methods']);
+    }
+
+    // ── exposed() merges both ──
+
+    #[Test]
+    public function exposedMergesHttpAndRtRoutes(): void
+    {
+        $this->rt->get('/users', ['UserController', 'index'])->name('users.index')->expose();
+        $this->rt->ws('/chat/{room}', ['ChatController', 'index'])->name('ws.chat')->expose();
+
+        $exposed = $this->rt->exposed();
+
+        self::assertArrayHasKey('users.index', $exposed);
+        self::assertArrayHasKey('ws.chat', $exposed);
     }
 
     // ── Route features ──
@@ -167,10 +206,9 @@ final class RTTest extends TestCase
     #[Test]
     public function wsPrefixIsApplied(): void
     {
-        $this->rt->group('/api', function ($group) {
+        $this->rt->group('/api', function ($group): void {
             $this->rt->ws('/chat/{room}', ['ChatController', 'index']);
         });
-        $this->rt->compileRt();
 
         $match = $this->rt->matchRt($this->wsRequest('/api/chat/general'));
 

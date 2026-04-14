@@ -19,8 +19,12 @@ final class SSEWriterTest extends TestCase
         $this->output = '';
         $this->closed = false;
         $this->writer = new SSEWriter(
-            writeFn: function (string $data): void { $this->output .= $data; },
-            closeFn: function (): void { $this->closed = true; },
+            writeFn: function (string $data): void {
+                $this->output .= $data;
+            },
+            closeFn: function (): void {
+                $this->closed = true;
+            },
         );
     }
 
