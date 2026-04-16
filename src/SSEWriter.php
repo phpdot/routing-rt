@@ -9,15 +9,30 @@ use Closure;
 final class SSEWriter
 {
     private bool $closed = false;
+    private float $lastWriteTime;
+    private const int KEEP_ALIVE_INTERVAL = 30;
 
     /**
      * @param Closure(string): void $writeFn
      * @param Closure(): void $closeFn
+     * @param string|null $lastEventId The Last-Event-ID header from the reconnecting client
      */
     public function __construct(
         private readonly Closure $writeFn,
         private readonly Closure $closeFn,
-    ) {}
+        private readonly string|null $lastEventId = null,
+    ) {
+        $this->lastWriteTime = microtime(true);
+    }
+
+    /**
+     * Get the Last-Event-ID sent by the client on reconnection.
+     * Returns null on first connection.
+     */
+    public function lastEventId(): string|null
+    {
+        return $this->lastEventId;
+    }
 
     /**
      * Send a named event.
@@ -44,7 +59,7 @@ final class SSEWriter
         }
 
         $payload .= "\n";
-        ($this->writeFn)($payload);
+        $this->write($payload);
     }
 
     /**
@@ -64,7 +79,7 @@ final class SSEWriter
             $payload .= "data: {$line}\n";
         }
         $payload .= "\n";
-        ($this->writeFn)($payload);
+        $this->write($payload);
     }
 
     /**
@@ -76,7 +91,7 @@ final class SSEWriter
             return;
         }
 
-        ($this->writeFn)(": {$text}\n\n");
+        $this->write(": {$text}\n\n");
     }
 
     /**
@@ -88,15 +103,24 @@ final class SSEWriter
             return;
         }
 
-        ($this->writeFn)("retry: {$ms}\n\n");
+        $this->write("retry: {$ms}\n\n");
     }
 
     /**
      * Check if the client disconnected.
+     * Sends a keep-alive comment if no data was written in the last 30 seconds.
      */
     public function isClosed(): bool
     {
-        return $this->closed;
+        if ($this->closed) {
+            return true;
+        }
+
+        if ((microtime(true) - $this->lastWriteTime) >= self::KEEP_ALIVE_INTERVAL) {
+            $this->write(": keep-alive\n\n");
+        }
+
+        return false;
     }
 
     /**
@@ -118,5 +142,11 @@ final class SSEWriter
     public function markClosed(): void
     {
         $this->closed = true;
+    }
+
+    private function write(string $payload): void
+    {
+        ($this->writeFn)($payload);
+        $this->lastWriteTime = microtime(true);
     }
 }

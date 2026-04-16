@@ -137,7 +137,8 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
             );
         }
 
-        $writer = new SSEWriter($write, $close);
+        $lastEventId = $request->getHeaderLine('Last-Event-ID');
+        $writer = new SSEWriter($write, $close, $lastEventId !== '' ? $lastEventId : null);
         $controller->stream($writer);
         $writer->markClosed();
 
