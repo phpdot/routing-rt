@@ -13,7 +13,7 @@ final class SSEWriter
     private const int KEEP_ALIVE_INTERVAL = 30;
 
     /**
-     * @param Closure(string): void $writeFn
+     * @param Closure(string): bool $writeFn
      * @param Closure(): void $closeFn
      * @param string|null $lastEventId The Last-Event-ID header from the reconnecting client
      */
@@ -146,7 +146,11 @@ final class SSEWriter
 
     private function write(string $payload): void
     {
-        ($this->writeFn)($payload);
+        $ok = ($this->writeFn)($payload);
+        if ($ok === false) {
+            $this->closed = true;
+            return;
+        }
         $this->lastWriteTime = microtime(true);
     }
 }

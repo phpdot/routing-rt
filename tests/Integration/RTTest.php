@@ -165,8 +165,9 @@ final class RTTest extends TestCase
 
         $handled = $this->rt->handleSse(
             $this->sseRequest('/feed'),
-            function (string $data) use (&$output): void {
+            function (string $data) use (&$output): bool {
                 $output .= $data;
+                return true;
             },
             fn(): null => null,
         );
@@ -182,7 +183,7 @@ final class RTTest extends TestCase
 
         $handled = $this->rt->handleSse(
             $this->sseRequest('/unknown'),
-            fn(string $d): null => null,
+            fn(string $d): bool => true,
             fn(): null => null,
         );
 
@@ -196,7 +197,7 @@ final class RTTest extends TestCase
 
         $handled = $this->rt->handleSse(
             $this->request('/feed'),
-            fn(string $d): null => null,
+            fn(string $d): bool => true,
             fn(): null => null,
         );
 
@@ -212,7 +213,7 @@ final class RTTest extends TestCase
 
         $this->rt->handleSse(
             $this->sseRequest('/feed'),
-            fn(string $d): null => null,
+            fn(string $d): bool => true,
             fn(): null => null,
         );
     }

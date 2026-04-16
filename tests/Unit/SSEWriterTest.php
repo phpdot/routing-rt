@@ -19,8 +19,9 @@ final class SSEWriterTest extends TestCase
         $this->output = '';
         $this->closed = false;
         $this->writer = new SSEWriter(
-            writeFn: function (string $data): void {
+            writeFn: function (string $data): bool {
                 $this->output .= $data;
+                return true;
             },
             closeFn: function (): void {
                 $this->closed = true;
@@ -101,6 +102,38 @@ final class SSEWriterTest extends TestCase
 
         self::assertTrue($this->writer->isClosed());
         self::assertTrue($this->closed);
+    }
+
+    #[Test]
+    public function detectsClientDisconnect(): void
+    {
+        $writer = new SSEWriter(
+            writeFn: fn(string $data): bool => false,
+            closeFn: fn(): null => null,
+        );
+
+        $writer->event('update', 'will fail');
+
+        self::assertTrue($writer->isClosed());
+    }
+
+    #[Test]
+    public function keepAliveDetectsDisconnect(): void
+    {
+        $writeCount = 0;
+        $writer = new SSEWriter(
+            writeFn: function (string $data) use (&$writeCount): bool {
+                $writeCount++;
+                return $writeCount <= 1;
+            },
+            closeFn: fn(): null => null,
+        );
+
+        $writer->event('first', 'ok');
+        self::assertFalse($writer->isClosed());
+
+        $writer->event('second', 'will fail');
+        self::assertTrue($writer->isClosed());
     }
 
     #[Test]
