@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT;
 
 use Closure;
+use PHPdot\Contracts\Server\SseHandlerInterface;
+use PHPdot\Contracts\Server\WebSocketHandlerInterface;
 use PHPdot\Routing\Compiler\RouteCompiler;
 use PHPdot\Routing\Matcher\MatcherInterface;
 use PHPdot\Routing\Matcher\RouteMatch;
@@ -12,18 +14,24 @@ use PHPdot\Routing\Matcher\TrieMatcher;
 use PHPdot\Routing\Route\Route;
 use PHPdot\Routing\Route\RouteCollection;
 use PHPdot\Routing\Router;
+use PHPdot\Routing\RouterRT\Contracts\SSEController;
+use PHPdot\Routing\RouterRT\Contracts\WebSocketController;
 use PHPdot\Routing\Utils\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use RuntimeException;
 
-final class RouterRT extends Router
+final class RouterRT extends Router implements WebSocketHandlerInterface, SseHandlerInterface
 {
     private RouteCollection $rtRoutes;
     private MatcherInterface|null $rtMatcher = null;
 
+    /** @var array<int, array{conn: Connection, controller: WebSocketController}> */
+    private array $connections = [];
+
     public function __construct(
-        ContainerInterface $container,
+        private readonly ContainerInterface $container,
         ResponseFactoryInterface $responseFactory,
     ) {
         parent::__construct($container, $responseFactory);
@@ -33,9 +41,9 @@ final class RouterRT extends Router
     /**
      * Register a WebSocket route.
      *
-     * @param Closure|string|array<int, string> $handler
+     * @param string $handler Class name implementing WebSocketController
      */
-    public function ws(string $pattern, Closure|string|array $handler): Route
+    public function ws(string $pattern, string $handler): Route
     {
         return $this->addRtRoute('WS', $pattern, $handler);
     }
@@ -43,49 +51,103 @@ final class RouterRT extends Router
     /**
      * Register an SSE route.
      *
-     * @param Closure|string|array<int, string> $handler
+     * @param string $handler Class name implementing SSEController
      */
-    public function sse(string $pattern, Closure|string|array $handler): Route
+    public function sse(string $pattern, string $handler): Route
     {
         return $this->addRtRoute('SSE', $pattern, $handler);
     }
 
-    /**
-     * Match against RT routes using request headers.
-     * Upgrade: websocket → WS routes. Accept: text/event-stream → SSE routes.
-     * Returns null if no RT route matches — caller falls back to HTTP.
-     */
-    public function matchRt(ServerRequestInterface $request): RouteMatch|null
+    public function handleWsOpen(
+        int $fd,
+        ServerRequestInterface $request,
+        Closure $send,
+        Closure $sendBinary,
+        Closure $close,
+    ): bool {
+        $match = $this->matchRoute('WS', $request);
+
+        if ($match === null) {
+            return false;
+        }
+
+        $conn = new Connection($fd, $send, $sendBinary, $close, $request);
+        $conn->setParams($match->getParameters());
+
+        $class = $this->resolveHandlerClass($match->getRoute()->getHandler());
+        $controller = $this->container->get($class);
+
+        if (!$controller instanceof WebSocketController) {
+            throw new RuntimeException(
+                "Handler '{$class}' must implement " . WebSocketController::class,
+            );
+        }
+
+        $this->connections[$fd] = ['conn' => $conn, 'controller' => $controller];
+        $controller->onOpen();
+
+        return true;
+    }
+
+    public function handleWsMessage(int $fd, string $data, int $opcode): void
     {
-        if ($this->rtMatcher === null) {
-            $this->compileRt();
+        if (!isset($this->connections[$fd])) {
+            return;
         }
 
-        assert($this->rtMatcher instanceof MatcherInterface);
+        $this->connections[$fd]['controller']->onMessage(
+            new Frame($data, Opcode::from($opcode)),
+        );
+    }
 
-        $segments = Path::segments($request->getUri()->getPath());
-        $host = $request->getHeaderLine('host');
-
-        if (strtolower($request->getHeaderLine('upgrade')) === 'websocket') {
-            $result = $this->rtMatcher->match('WS', $segments, $host);
-            return $result instanceof RouteMatch ? $result : null;
+    public function handleWsClose(int $fd, int $code, string $reason): void
+    {
+        if (!isset($this->connections[$fd])) {
+            return;
         }
 
-        if (str_contains($request->getHeaderLine('accept'), 'text/event-stream')) {
-            $result = $this->rtMatcher->match('SSE', $segments, $host);
-            return $result instanceof RouteMatch ? $result : null;
+        $this->connections[$fd]['controller']->onClose($code, $reason);
+        unset($this->connections[$fd]);
+    }
+
+    public function handleSse(
+        ServerRequestInterface $request,
+        Closure $write,
+        Closure $close,
+    ): bool {
+        if (!str_contains($request->getHeaderLine('accept'), 'text/event-stream')) {
+            return false;
         }
 
-        return null;
+        $match = $this->matchRoute('SSE', $request);
+
+        if ($match === null) {
+            return false;
+        }
+
+        $class = $this->resolveHandlerClass($match->getRoute()->getHandler());
+        $controller = $this->container->get($class);
+
+        if (!$controller instanceof SSEController) {
+            throw new RuntimeException(
+                "Handler '{$class}' must implement " . SSEController::class,
+            );
+        }
+
+        $writer = new SSEWriter($write, $close);
+        $controller->stream($writer);
+        $writer->markClosed();
+
+        return true;
     }
 
     /**
-     * Compile all routes — HTTP and RT.
+     * Compile both HTTP and RT routes.
      */
     public function compile(): void
     {
         parent::compile();
-        $this->compileRt();
+        $this->compileRtRoutes();
     }
 
     /**
@@ -105,40 +167,50 @@ final class RouterRT extends Router
      */
     public function exposed(): array
     {
-        $httpExposed = parent::exposed();
-        $rtExposed = [];
+        $map = parent::exposed();
+
         foreach ($this->rtRoutes->getExposed() as $route) {
             $name = $route->getName();
             if ($name !== null) {
-                $rtExposed[$name] = '/' . ltrim($route->getPattern(), '/');
+                $map[$name] = '/' . ltrim($route->getPattern(), '/');
             }
         }
 
-        return array_merge($httpExposed, $rtExposed);
+        return $map;
     }
 
-    /**
-     * Get the RT route collection.
-     */
-    public function getRtRoutes(): RouteCollection
+    private function matchRoute(string $type, ServerRequestInterface $request): RouteMatch|null
     {
-        return $this->rtRoutes;
-    }
+        if ($this->rtMatcher === null) {
+            $this->compileRtRoutes();
+        }
 
-    /**
-     * Compile RT routes into a separate trie.
-     */
-    public function compileRt(): void
-    {
-        $compiler = new RouteCompiler($this->getPatterns());
-        $root = $compiler->compile($this->rtRoutes);
-        $this->rtMatcher = new TrieMatcher($root);
+        assert($this->rtMatcher instanceof MatcherInterface);
+
+        $segments = Path::segments($request->getUri()->getPath());
+        $host = $request->getHeaderLine('host');
+        $result = $this->rtMatcher->match($type, $segments, $host);
+
+        return $result instanceof RouteMatch ? $result : null;
     }
 
     /**
      * @param Closure|string|array<int, string> $handler
      */
-    private function addRtRoute(string $method, string $pattern, Closure|string|array $handler): Route
+    private function resolveHandlerClass(Closure|string|array $handler): string
+    {
+        if (is_string($handler)) {
+            return $handler;
+        }
+
+        if (is_array($handler)) {
+            return $handler[0];
+        }
+
+        throw new RuntimeException('WS/SSE handlers must be class names.');
+    }
+
+    private function addRtRoute(string $method, string $pattern, string $handler): Route
     {
         $fullPattern = $this->buildPattern($pattern);
         $segments = Path::segments($fullPattern);
@@ -147,6 +219,13 @@ final class RouterRT extends Router
         $this->rtRoutes->add($route);
 
         return $route;
+    }
+
+    private function compileRtRoutes(): void
+    {
+        $compiler = new RouteCompiler($this->getPatterns());
+        $root = $compiler->compile($this->rtRoutes);
+        $this->rtMatcher = new TrieMatcher($root);
     }
 
     /**

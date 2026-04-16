@@ -12,6 +12,7 @@
     "keywords": ["routing", "websocket", "sse", "real-time", "swoole"],
     "require": {
         "php": ">=8.3",
+        "phpdot/contracts": "^1.0",
         "phpdot/routing": "^1.1"
     },
     "require-dev": {
