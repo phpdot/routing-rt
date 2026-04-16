@@ -84,7 +84,7 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
         }
 
         $this->connections[$fd] = ['conn' => $conn, 'controller' => $controller];
-        $controller->onOpen();
+        $controller->onOpen($conn);
 
         return true;
     }
@@ -95,7 +95,9 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
             return;
         }
 
-        $this->connections[$fd]['controller']->onMessage(
+        $entry = $this->connections[$fd];
+        $entry['controller']->onMessage(
+            $entry['conn'],
             new Frame($data, Opcode::from($opcode)),
         );
     }
@@ -106,7 +108,8 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
             return;
         }
 
-        $this->connections[$fd]['controller']->onClose($code, $reason);
+        $entry = $this->connections[$fd];
+        $entry['controller']->onClose($entry['conn'], $code, $reason);
         unset($this->connections[$fd]);
     }
 
