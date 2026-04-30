@@ -49,6 +49,24 @@ $app->compile();
 
 Same path can serve both HTTP and WebSocket without collision.
 
+### Inside the phpdot framework
+
+`RouterRT` carries `#[Singleton]`, so when used with `phpdot/package` it's auto-wired by the container — no manual `new RouterRT(...)` needed. To make `RouterRT` the default for everywhere your app asks for a `Router`, override the binding in your application boot:
+
+```php
+use PHPdot\Routing\Router;
+use PHPdot\Routing\RouterRT\RouterRT;
+
+$builder->register(
+    Router::class,
+    new ScopedDefinition(scope: Scope::SINGLETON, implementation: RouterRT::class),
+);
+```
+
+Anywhere your code asks for `Router::class`, the container hands back a `RouterRT` (which extends `Router`). All HTTP route registrations work unchanged; `->ws()` and `->sse()` become available.
+
+When served through `phpdot/server-swoole`, the server auto-detects `RouterRT` (via its `WebSocketHandlerInterface` and `SseHandlerInterface` markers) and wires Swoole's `onOpen` / `onMessage` / `onClose` event hooks to the router automatically. No additional configuration needed.
+
 ## Contracts
 
 ### WebSocketController

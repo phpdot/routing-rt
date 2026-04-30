@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT;
 
 use Closure;
+use PHPdot\Container\Attribute\Singleton;
 use PHPdot\Contracts\Server\SseHandlerInterface;
 use PHPdot\Contracts\Server\WebSocketHandlerInterface;
 use PHPdot\Routing\Compiler\RouteCompiler;
@@ -22,6 +23,7 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
 
+#[Singleton]
 final class RouterRT extends Router implements WebSocketHandlerInterface, SseHandlerInterface
 {
     private RouteCollection $rtRoutes;

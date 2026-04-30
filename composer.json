@@ -13,14 +13,19 @@
     "require": {
         "php": ">=8.3",
         "phpdot/contracts": "^1.1",
-        "phpdot/routing": "^1.1"
+        "phpdot/routing": "^1.3"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
         "nyholm/psr7": "^1.8",
+        "phpdot/container": "^1.6",
         "phpstan/phpstan": "^2.0",
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^11.0"
+    },
+    "suggest": {
+        "phpdot/container": "Required for the framework's manifest scanner to auto-wire RouterRT via the #[Singleton] attribute. The attribute is inert at runtime; standalone consumers don't need it installed.",
+        "phpdot/server-swoole": "Swoole runtime that consumes RouterRT's WebSocketHandlerInterface and SseHandlerInterface — auto-detects RouterRT and wires WS/SSE event hooks."
     },
     "autoload": {
         "psr-4": {
