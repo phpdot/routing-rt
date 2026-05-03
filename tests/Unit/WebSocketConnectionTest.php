@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT\Tests\Unit;
 
 use Nyholm\Psr7\ServerRequest;
-use PHPdot\Routing\RouterRT\Connection;
+use PHPdot\Routing\RouterRT\WebSocketConnection;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-final class ConnectionTest extends TestCase
+final class WebSocketConnectionTest extends TestCase
 {
     /** @var list<string> */
     private array $sent;
@@ -20,7 +20,7 @@ final class ConnectionTest extends TestCase
     /** @var array{code: int, reason: string}|null */
     private array|null $closedWith;
 
-    private Connection $conn;
+    private WebSocketConnection $conn;
 
     protected function setUp(): void
     {
@@ -28,7 +28,7 @@ final class ConnectionTest extends TestCase
         $this->sentBinary = [];
         $this->closedWith = null;
 
-        $this->conn = new Connection(
+        $this->conn = new WebSocketConnection(
             fd: 42,
             sendFn: function (string $data): bool {
                 $this->sent[] = $data;
@@ -134,9 +134,9 @@ final class ConnectionTest extends TestCase
         self::assertSame('/chat/general', $this->conn->request()->getUri()->getPath());
     }
 
-    private function makeConnection(\Psr\Http\Message\ServerRequestInterface $request): Connection
+    private function makeConnection(\Psr\Http\Message\ServerRequestInterface $request): WebSocketConnection
     {
-        return new Connection(
+        return new WebSocketConnection(
             fd: 1,
             sendFn: fn(string $d): bool => true,
             sendBinaryFn: fn(string $d): bool => true,

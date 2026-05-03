@@ -29,7 +29,7 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
     private RouteCollection $rtRoutes;
     private MatcherInterface|null $rtMatcher = null;
 
-    /** @var array<int, array{conn: Connection, controller: WebSocketController}> */
+    /** @var array<int, array{conn: WebSocketConnection, controller: WebSocketController}> */
     private array $connections = [];
 
     public function __construct(
@@ -73,7 +73,7 @@ final class RouterRT extends Router implements WebSocketHandlerInterface, SseHan
             return false;
         }
 
-        $conn = new Connection($fd, $send, $sendBinary, $close, $request);
+        $conn = new WebSocketConnection($fd, $send, $sendBinary, $close, $request);
         $conn->setParams($match->getParameters());
 
         $class = $this->resolveHandlerClass($match->getRoute()->getHandler());

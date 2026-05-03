@@ -73,13 +73,13 @@ When served through `phpdot/server-swoole`, the server auto-detects `RouterRT` (
 
 ```php
 use PHPdot\Routing\RouterRT\Contracts\WebSocketController;
-use PHPdot\Routing\RouterRT\Connection;
+use PHPdot\Routing\RouterRT\WebSocketConnection;
 use PHPdot\Routing\RouterRT\Frame;
 
 final class ChatController implements WebSocketController
 {
     public function __construct(
-        private Connection $conn,
+        private WebSocketConnection $conn,
     ) {}
 
     public function onOpen(): void
@@ -117,7 +117,7 @@ final class DashboardController implements SSEController
 }
 ```
 
-## Connection
+## WebSocketConnection
 
 Server-agnostic WebSocket connection. No Swoole dependency — fully testable.
 
@@ -161,7 +161,7 @@ $frame->opcode;  // Opcode::Text | Opcode::Binary
 ## What Is NOT In This Package
 
 - Rooms, broadcasting, presence — `phpdot/channel`
-- Connection management — framework wiring
+- WebSocketConnection management — framework wiring
 - Swoole event registration — framework wiring
 
 ## Testing

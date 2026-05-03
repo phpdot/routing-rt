@@ -7,7 +7,7 @@ namespace PHPdot\Routing\RouterRT;
 use Closure;
 use Psr\Http\Message\ServerRequestInterface;
 
-final class Connection
+final class WebSocketConnection
 {
     /** @var array<string, mixed> */
     private array $params = [];
@@ -16,7 +16,7 @@ final class Connection
     private array $attributes = [];
 
     /**
-     * @param int $fd Connection file descriptor
+     * @param int $fd WebSocketConnection file descriptor
      * @param Closure(string): bool $sendFn Send text frame
      * @param Closure(string): bool $sendBinaryFn Send binary frame
      * @param Closure(int, string): bool $closeFn Close connection
