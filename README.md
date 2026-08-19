@@ -20,9 +20,9 @@ SSE streams through an `SSEWriter`.
 | Requirement | Constraint |
 |---|---|
 | PHP | `>= 8.5` |
-| `phpdot/contracts` | `^0.1` |
-| `phpdot/realtime` | `^0.1` |
-| `phpdot/routing` | `^0.1` |
+| `phpdot/contracts` | `^0.2` |
+| `phpdot/realtime` | `^0.2` |
+| `phpdot/routing` | `^0.2` |
 | `psr/container` | `^2.0` |
 | `psr/http-factory` | `^1.0` |
 | `psr/http-message` | `^2.0` |
