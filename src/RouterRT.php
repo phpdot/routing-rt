@@ -27,6 +27,7 @@ use PHPdot\Realtime\Hub;
 use PHPdot\Realtime\Socket;
 use PHPdot\Routing\Compiler\RouteCompiler;
 use PHPdot\Routing\Contract\MatcherInterface;
+use PHPdot\Routing\Exception\RoutingException;
 use PHPdot\Routing\Matcher\RouteMatch;
 use PHPdot\Routing\Matcher\TrieMatcher;
 use PHPdot\Routing\Route\Route;
@@ -39,7 +40,6 @@ use PHPdot\Routing\Utils\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use RuntimeException;
 
 #[Singleton]
 final class RouterRT extends Router implements SseHandlerInterface
@@ -260,7 +260,7 @@ final class RouterRT extends Router implements SseHandlerInterface
             $middleware = $this->container->get($middlewareClass);
 
             if (!$middleware instanceof WebSocketMiddleware) {
-                throw new RuntimeException("'{$middlewareClass}' must implement " . WebSocketMiddleware::class);
+                throw new RoutingException("'{$middlewareClass}' must implement " . WebSocketMiddleware::class);
             }
 
             $next = $chain;
@@ -285,7 +285,7 @@ final class RouterRT extends Router implements SseHandlerInterface
      *
      * @return (Closure(): void)|null
      */
-    private function resolveEventHandler(object $controller, string $event, Socket $socket, array $params, array $payload, Ack|null $ack): ?Closure
+    private function resolveEventHandler(object $controller, string $event, Socket $socket, array $params, array $payload, Ack|null $ack): null|Closure
     {
         $method = $this->eventToMethod($event);
 
@@ -372,7 +372,7 @@ final class RouterRT extends Router implements SseHandlerInterface
         $controller = $this->container->get($class);
 
         if (!$controller instanceof SSEController) {
-            throw new RuntimeException(
+            throw new RoutingException(
                 "Handler '{$class}' must implement " . SSEController::class,
             );
         }
@@ -463,7 +463,7 @@ final class RouterRT extends Router implements SseHandlerInterface
             return $handler[0];
         }
 
-        throw new RuntimeException('WS/SSE handlers must be class names.');
+        throw new RoutingException('WS/SSE handlers must be class names.');
     }
 
     /**

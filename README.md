@@ -23,6 +23,8 @@ SSE streams through an `SSEWriter`.
 | `phpdot/contracts` | `^0.1` |
 | `phpdot/realtime` | `^0.1` |
 | `phpdot/routing` | `^0.1` |
+| `psr/container` | `^2.0` |
+| `psr/http-factory` | `^1.0` |
 | `psr/http-message` | `^2.0` |
 
 `phpdot/container` is a dev-only suggestion — the `#[Singleton]` attribute on `RouterRT` is inert until a
