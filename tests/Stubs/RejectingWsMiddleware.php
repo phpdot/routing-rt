@@ -6,7 +6,7 @@ namespace PHPdot\Routing\RouterRT\Tests\Stubs;
 
 use Closure;
 use PHPdot\Realtime\Socket;
-use PHPdot\Routing\RouterRT\Ack;
+use PHPdot\Routing\RouterRT\Channel\Ack;
 use PHPdot\Routing\RouterRT\Contract\WebSocketMiddleware;
 
 /**

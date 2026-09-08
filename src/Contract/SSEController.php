@@ -12,7 +12,7 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT\Contract;
 
 use PHPdot\Routing\Contract\ControllerInterface;
-use PHPdot\Routing\RouterRT\SSEWriter;
+use PHPdot\Routing\RouterRT\Transport\SSEWriter;
 
 interface SSEController extends ControllerInterface
 {

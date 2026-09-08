@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Routing\RouterRT\Tests\Unit;
 
-use PHPdot\Routing\RouterRT\SSEWriter;
+use PHPdot\Routing\RouterRT\Transport\SSEWriter;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

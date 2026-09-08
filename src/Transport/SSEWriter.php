@@ -9,7 +9,7 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Routing\RouterRT;
+namespace PHPdot\Routing\RouterRT\Transport;
 
 use Closure;
 

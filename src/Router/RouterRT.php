@@ -6,7 +6,12 @@ declare(strict_types=1);
  * RouterRT — extends the HTTP Router with real-time routing. WebSocket CHANNELS
  * and SSE are registered as PATH-pattern routes (ws('/chat/{room}', ...),
  * sse('/feed', ...)) matched by the SAME trie as HTTP — named params, where(),
- * middleware. A WebSocket's CONNECTION URL is its channel: dispatchWsOpen matches
+ * middleware. A WebSocket's middleware is the WebSocketMiddleware contract run
+ * once at open; an SSE route takes the app's own PSR-15 middlewares
+ * (`sse('/feed', ...)->middleware(Auth::class)`), run around the stream — a
+ * refusing middleware stops the stream before it starts and the request falls
+ * through to the normal HTTP pipeline. A WebSocket's CONNECTION URL is its
+ * channel: dispatchWsOpen matches
  * the request path, binds the resolved channel to the fd, runs middleware ONCE
  * (per-connection, like HTTP), then subscribes; dispatchWsMessage dispatches
  * {event, data} frames to that bound controller (the channel is NOT in the
@@ -17,7 +22,7 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Routing\RouterRT;
+namespace PHPdot\Routing\RouterRT\Router;
 
 use Closure;
 use PHPdot\Container\Attribute\Singleton;
@@ -33,13 +38,19 @@ use PHPdot\Routing\Matcher\TrieMatcher;
 use PHPdot\Routing\Route\Route;
 use PHPdot\Routing\Route\RouteCollection;
 use PHPdot\Routing\Router;
+use PHPdot\Routing\RouterRT\Channel\Ack;
+use PHPdot\Routing\RouterRT\Channel\WsRoute;
 use PHPdot\Routing\RouterRT\Contract\ChannelController;
 use PHPdot\Routing\RouterRT\Contract\SSEController;
 use PHPdot\Routing\RouterRT\Contract\WebSocketMiddleware;
+use PHPdot\Routing\RouterRT\Transport\SSEWriter;
 use PHPdot\Routing\Utils\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 
 #[Singleton]
 final class RouterRT extends Router implements SseHandlerInterface
@@ -70,7 +81,7 @@ final class RouterRT extends Router implements SseHandlerInterface
      */
     public function __construct(
         private readonly ContainerInterface $container,
-        ResponseFactoryInterface $responseFactory,
+        private readonly ResponseFactoryInterface $responseFactory,
         private readonly Hub $hub,
     ) {
         parent::__construct($container, $responseFactory);
@@ -378,11 +389,109 @@ final class RouterRT extends Router implements SseHandlerInterface
         }
 
         $lastEventId = $request->getHeaderLine('Last-Event-ID');
-        $writer = new SSEWriter($write, $close, $lastEventId !== '' ? $lastEventId : null);
-        $controller->stream($writer);
-        $writer->markClosed();
 
-        return true;
+        return $this->runSseMiddleware(
+            $match->getRoute(),
+            $request,
+            static function () use ($controller, $write, $close, $lastEventId): void {
+                $writer = new SSEWriter($write, $close, $lastEventId !== '' ? $lastEventId : null);
+                $controller->stream($writer);
+                $writer->markClosed();
+            },
+        );
+    }
+
+    /**
+     * Run the SSE route's PSR-15 middlewares around the stream.
+     *
+     * An SSE route takes the same `->middleware(Auth::class)` an HTTP route
+     * takes, and the classes are the app's own PSR-15 middlewares — there is
+     * no SSE-specific contract, because an SSE request still IS a request.
+     *
+     * The chain's terminal handler runs the stream and answers a bare 200;
+     * a middleware that refuses returns its own response without proceeding,
+     * no stream byte is written, and this answers FALSE — the transport then
+     * falls through to the normal HTTP pipeline, where the app's global stack
+     * judges the request again and produces the proper 401 or redirect. The
+     * refused middleware's own response is deliberately dropped: handleSse
+     * has no response channel, and the pipeline is the honest place for one.
+     *
+     * @param Route $route The matched SSE route
+     * @param ServerRequestInterface $request The stream request
+     * @param Closure $core The stream itself; runs only if every middleware proceeds
+     *
+     * @return bool True when the stream ran; false when a middleware refused
+     */
+    private function runSseMiddleware(Route $route, ServerRequestInterface $request, Closure $core): bool
+    {
+        $streamed = false;
+
+        $gated = static function () use ($core, &$streamed): void {
+            $core();
+            $streamed = true;
+        };
+
+        $terminal = new class ($gated, $this->responseFactory) implements RequestHandlerInterface {
+            public function __construct(
+                private readonly Closure $core,
+                private readonly ResponseFactoryInterface $responses,
+            ) {}
+
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                ($this->core)();
+
+                return $this->responses->createResponse(200);
+            }
+        };
+
+        $handler = $terminal;
+
+        foreach (array_reverse($route->getMiddlewares()) as $middleware) {
+            if ($middleware instanceof Closure) {
+                $handler = new class ($middleware, $handler) implements RequestHandlerInterface {
+                    public function __construct(
+                        private readonly Closure $middleware,
+                        private readonly RequestHandlerInterface $next,
+                    ) {}
+
+                    public function handle(ServerRequestInterface $request): ResponseInterface
+                    {
+                        $result = ($this->middleware)($request, $this->next);
+
+                        if (!$result instanceof ResponseInterface) {
+                            throw new RoutingException('A closure SSE middleware must answer a ResponseInterface.');
+                        }
+
+                        return $result;
+                    }
+                };
+
+                continue;
+            }
+
+            $resolved = $this->container->get($middleware);
+
+            if (!$resolved instanceof MiddlewareInterface) {
+                throw new RoutingException("'{$middleware}' must implement " . MiddlewareInterface::class);
+            }
+
+            $handler = new class ($resolved, $handler) implements RequestHandlerInterface {
+                public function __construct(
+                    private readonly MiddlewareInterface $middleware,
+                    private readonly RequestHandlerInterface $next,
+                ) {}
+
+                public function handle(ServerRequestInterface $request): ResponseInterface
+                {
+                    return $this->middleware->process($request, $this->next);
+                }
+            };
+        }
+
+        $handler->handle($request);
+
+        return $streamed;
     }
 
     /**
@@ -397,7 +506,16 @@ final class RouterRT extends Router implements SseHandlerInterface
     /**
      * List all routes — HTTP and RT merged.
      *
-     * @return array<int, array<string, mixed>>
+     * @return list<array{
+     *     methods: array<string>,
+     *     pattern: string,
+     *     name: string|null,
+     *     handler: string,
+     *     middlewares: array<string|Closure>,
+     *     hosts: array<string>,
+     *     where: array<string, string>,
+     *     scope: string|null,
+     * }>
      */
     public function list(): array
     {
@@ -501,7 +619,16 @@ final class RouterRT extends Router implements SseHandlerInterface
     /**
      * List every registered real-time route as a plain array (for introspection).
      *
-     * @return array<int, array<string, mixed>>
+     * @return list<array{
+     *     methods: array<string>,
+     *     pattern: string,
+     *     name: string|null,
+     *     handler: string,
+     *     middlewares: array<string|Closure>,
+     *     hosts: array<string>,
+     *     where: array<string, string>,
+     *     scope: string|null,
+     * }>
      */
     private function listRtRoutes(): array
     {
@@ -521,7 +648,7 @@ final class RouterRT extends Router implements SseHandlerInterface
                 'pattern' => '/' . ltrim($route->getPattern(), '/'),
                 'name' => $route->getName(),
                 'handler' => $handlerString,
-                'middlewares' => $route->getMiddlewares(),
+                'middlewares' => ($this->wsRoutes[$route->getPattern()] ?? null)?->getMiddlewares() ?? $route->getMiddlewares(),
                 'hosts' => $route->getHosts(),
                 'where' => $route->getWhere(),
                 'scope' => $route->getScope()?->getName(),

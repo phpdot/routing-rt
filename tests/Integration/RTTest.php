@@ -9,16 +9,18 @@ use PHPdot\Http\Message\ServerRequest;
 use PHPdot\Realtime\Adapter\TableAdapter;
 use PHPdot\Realtime\Hub;
 use PHPdot\Routing\Matcher\RouteMatch;
-use PHPdot\Routing\RouterRT\RouterRT;
+use PHPdot\Routing\RouterRT\Channel\WsRoute;
+use PHPdot\Routing\RouterRT\Router\RouterRT;
 use PHPdot\Routing\RouterRT\Tests\Stubs\ChatControllerStub;
 use PHPdot\Routing\RouterRT\Tests\Stubs\FakeSender;
 use PHPdot\Routing\RouterRT\Tests\Stubs\FeedControllerStub;
 use PHPdot\Routing\RouterRT\Tests\Stubs\NotAControllerStub;
+use PHPdot\Routing\RouterRT\Tests\Stubs\RejectingMiddleware;
 use PHPdot\Routing\RouterRT\Tests\Stubs\RejectingWsMiddleware;
 use PHPdot\Routing\RouterRT\Tests\Stubs\StubContainer;
+use PHPdot\Routing\RouterRT\Tests\Stubs\StubMiddleware;
 use PHPdot\Routing\RouterRT\Tests\Stubs\StubWsMiddleware;
 use PHPdot\Routing\RouterRT\Tests\Stubs\TypedParamControllerStub;
-use PHPdot\Routing\RouterRT\WsRoute;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
@@ -287,6 +289,51 @@ final class RTTest extends TestCase
             static fn(string $d): bool => true,
             static fn(): null => null,
         );
+    }
+
+    #[Test]
+    public function sseRouteMiddlewareRunsAroundTheStream(): void
+    {
+        StubMiddleware::$calls = 0;
+        $this->container->set(StubMiddleware::class, new StubMiddleware());
+        $this->rt->sse('/feed', FeedControllerStub::class)->middleware(StubMiddleware::class);
+        $output = '';
+
+        $handled = $this->rt->handleSse(
+            $this->sseRequest('/feed'),
+            function (string $data) use (&$output): bool {
+                $output .= $data;
+
+                return true;
+            },
+            static fn(): null => null,
+        );
+
+        self::assertTrue($handled, 'a proceeding middleware lets the stream run');
+        self::assertSame(1, StubMiddleware::$calls, 'the route middleware executed exactly once');
+        self::assertStringContainsString('event: ping', $output);
+    }
+
+    #[Test]
+    public function aRefusingSseMiddlewareStopsTheStreamBeforeItStarts(): void
+    {
+        RejectingMiddleware::$refuses = true;
+        $this->container->set(RejectingMiddleware::class, new RejectingMiddleware());
+        $this->rt->sse('/private', FeedControllerStub::class)->middleware(RejectingMiddleware::class);
+        $output = '';
+
+        $handled = $this->rt->handleSse(
+            $this->sseRequest('/private'),
+            function (string $data) use (&$output): bool {
+                $output .= $data;
+
+                return true;
+            },
+            static fn(): null => null,
+        );
+
+        self::assertFalse($handled, 'a refusing middleware answers false, for the pipeline fallthrough');
+        self::assertSame('', $output, 'no stream byte was written');
     }
 
     // --- HTTP + RT coexistence ---

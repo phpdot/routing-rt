@@ -20,12 +20,14 @@ SSE streams through an `SSEWriter`.
 | Requirement | Constraint |
 |---|---|
 | PHP | `>= 8.5` |
-| `phpdot/contracts` | `^0.2` |
-| `phpdot/realtime` | `^0.2` |
-| `phpdot/routing` | `^0.2` |
+| `phpdot/contracts` | `^0.3` |
+| `phpdot/realtime` | `^0.3` |
+| `phpdot/routing` | `^0.3` |
 | `psr/container` | `^2.0` |
 | `psr/http-factory` | `^1.0` |
 | `psr/http-message` | `^2.0` |
+| `psr/http-server-handler` | `^1.0` |
+| `psr/http-server-middleware` | `^1.0` |
 
 `phpdot/container` is a dev-only suggestion — the `#[Singleton]` attribute on `RouterRT` is inert until a
 phpdot application reflects it.
@@ -39,7 +41,7 @@ composer require phpdot/routing-rt
 ## Usage
 
 ```php
-use PHPdot\Routing\RouterRT\RouterRT;
+use PHPdot\Routing\RouterRT\Router\RouterRT;
 
 $app = new RouterRT($container, $responseFactory);
 

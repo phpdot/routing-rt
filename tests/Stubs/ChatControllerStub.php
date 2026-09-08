@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT\Tests\Stubs;
 
 use PHPdot\Realtime\Socket;
-use PHPdot\Routing\RouterRT\Ack;
+use PHPdot\Routing\RouterRT\Channel\Ack;
 use PHPdot\Routing\RouterRT\Contract\ChannelController;
 
 /**

@@ -12,7 +12,7 @@ declare(strict_types=1);
  * @license MIT
  */
 
-namespace PHPdot\Routing\RouterRT;
+namespace PHPdot\Routing\RouterRT\Channel;
 
 use PHPdot\Routing\Route\Route;
 

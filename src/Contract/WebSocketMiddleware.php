@@ -17,7 +17,7 @@ namespace PHPdot\Routing\RouterRT\Contract;
 
 use Closure;
 use PHPdot\Realtime\Socket;
-use PHPdot\Routing\RouterRT\Ack;
+use PHPdot\Routing\RouterRT\Channel\Ack;
 
 interface WebSocketMiddleware
 {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PHPdot\Routing\RouterRT\Tests\Stubs;
 
 use PHPdot\Routing\RouterRT\Contract\SSEController;
-use PHPdot\Routing\RouterRT\SSEWriter;
+use PHPdot\Routing\RouterRT\Transport\SSEWriter;
 
 final class FeedControllerStub implements SSEController
 {
